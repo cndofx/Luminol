@@ -18,6 +18,8 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
+use eyre::{eyre, Result};
+
 use crate::data::config::RGSSVer;
 use crate::UpdateInfo;
 use async_trait::async_trait;
@@ -48,28 +50,28 @@ impl super::filesystem_trait::Filesystem for Filesystem {
     }
 
     /// Get the directory children of a path.
-    async fn dir_children(&self, path: impl AsRef<Path>) -> Result<Vec<String>, String> {
+    async fn dir_children(&self, path: impl AsRef<Path>) -> Result<Vec<String>> {
         // I am too lazy to make this actually async.
         // It'd take an external library or some hacking that I'm not up for currently.
-        std::fs::read_dir(
+        let result = std::fs::read_dir(
             self.project_path
                 .borrow()
                 .as_ref()
-                .ok_or_else(|| "Project not open".to_string())?
+                .ok_or_else(|| eyre!("Project not open"))?
                 .join(path),
         )
-        .map_err(|e| e.to_string())
         .map(|rd| {
             rd.into_iter()
                 .map(|e| e.unwrap().file_name().into_string().unwrap())
                 .collect()
-        })
+        })?;
+        Ok(result)
     }
 
     /// Read a data file and deserialize it with RON (rusty object notation)
     /// In the future this will take an optional parameter (type) to set the loading method.
     /// (Options would be Marshal, RON, Lumina)
-    async fn read_data<T>(&self, path: impl AsRef<Path>) -> Result<T, String>
+    async fn read_data<T>(&self, path: impl AsRef<Path>) -> Result<T>
     where
         T: serde::de::DeserializeOwned,
     {
@@ -77,44 +79,41 @@ impl super::filesystem_trait::Filesystem for Filesystem {
             .project_path
             .borrow()
             .as_ref()
-            .ok_or_else(|| "Project not open".to_string())?
+            .ok_or_else(|| eyre!("Project not open"))?
             .join(path);
 
-        let data = async_fs::read(&path).await.map_err(|e| e.to_string())?;
+        let data = async_fs::read(&path).await?;
 
         // let de = &mut alox_48::Deserializer::new(&data).unwrap();
         // let result = serde_path_to_error::deserialize(de);
         //
         // result.map_err(|e| format!("{}: {:?}", e.path(), e.inner()))
-        alox_48::from_bytes(&data).map_err(|e| format!("Loading {path:?}: {e}"))
+        alox_48::from_bytes(&data).map_err(|e| eyre!("Error loading {path:?}: {e}"))
     }
 
     /// Read bytes from a file.
-    async fn read_bytes(&self, provided_path: impl AsRef<Path>) -> Result<Vec<u8>, String> {
+    async fn read_bytes(&self, provided_path: impl AsRef<Path>) -> Result<Vec<u8>> {
         let path = self
             .project_path
             .borrow()
             .as_ref()
-            .ok_or_else(|| "Project not open".to_string())?
+            .ok_or_else(|| eyre!("Project not open"))?
             .join(provided_path);
         async_fs::read(&path)
             .await
-            .map_err(|e| format!("Loading {path:?}: {e}"))
+            .map_err(|e| eyre!("Error loading {path:?}: {e}"))
     }
 
-    async fn save_data(
-        &self,
-        path: impl AsRef<Path>,
-        data: impl AsRef<[u8]>,
-    ) -> Result<(), String> {
+    async fn save_data(&self, path: impl AsRef<Path>, data: impl AsRef<[u8]>) -> Result<()> {
         let path = self
             .project_path
             .borrow()
             .as_ref()
-            .ok_or_else(|| "Project not open".to_string())?
+            .ok_or_else(|| eyre!("Project not open"))?
             .join(path);
 
-        async_fs::write(path, data).await.map_err(|e| e.to_string())
+        async_fs::write(path, data).await?;
+        Ok(())
     }
 
     /// Check if file path exists
@@ -125,15 +124,12 @@ impl super::filesystem_trait::Filesystem for Filesystem {
     }
 
     /// Save all cached files. An alias for [`DataCache::save`];
-    async fn save_cached(&self, info: &'static UpdateInfo) -> Result<(), String> {
+    async fn save_cached(&self, info: &'static UpdateInfo) -> Result<()> {
+        // ! TODO
         info.data_cache.save(self).await
     }
 
-    async fn try_open_project(
-        &self,
-        info: &'static UpdateInfo,
-        path: impl ToString,
-    ) -> Result<(), String> {
+    async fn try_open_project(&self, info: &'static UpdateInfo, path: impl ToString) -> Result<()> {
         let mut path = PathBuf::from(path.to_string());
         let mut original_path = path.clone().to_string_lossy().to_string();
 
@@ -143,6 +139,7 @@ impl super::filesystem_trait::Filesystem for Filesystem {
 
         *self.loading_project.borrow_mut() = true;
 
+        // ! TODO
         info.data_cache.load(self).await.map_err(|e| {
             *self.project_path.borrow_mut() = None;
             *self.loading_project.borrow_mut() = false;
@@ -172,7 +169,7 @@ impl super::filesystem_trait::Filesystem for Filesystem {
     }
 
     /// Try to open a project.
-    async fn spawn_project_file_picker(&self, info: &'static UpdateInfo) -> Result<(), String> {
+    async fn spawn_project_file_picker(&self, info: &'static UpdateInfo) -> Result<()> {
         if let Some(path) = rfd::AsyncFileDialog::default()
             .add_filter("project file", &["rxproj", "lumproj"])
             .pick_file()
@@ -181,20 +178,21 @@ impl super::filesystem_trait::Filesystem for Filesystem {
             self.try_open_project(info, path.path().to_str().unwrap())
                 .await
         } else {
-            Err("Cancelled loading project".to_string())
+            Err(eyre!("Cancelled loading project"))
         }
     }
 
     /// Create a directory at the specified path.
-    async fn create_directory(&self, path: impl AsRef<Path>) -> Result<(), String> {
+    async fn create_directory(&self, path: impl AsRef<Path>) -> Result<()> {
         let path = self
             .project_path
             .borrow()
             .as_ref()
-            .ok_or_else(|| "Project not open".to_string())?
+            .ok_or_else(|| eyre!("Project not open"))?
             .join(path);
 
-        async_fs::create_dir(path).await.map_err(|e| e.to_string())
+        async_fs::create_dir(path).await?;
+        Ok(())
     }
 
     /// Try to create a project.
@@ -203,7 +201,7 @@ impl super::filesystem_trait::Filesystem for Filesystem {
         name: String,
         info: &'static UpdateInfo,
         rgss_ver: RGSSVer,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         if let Some(path) = rfd::AsyncFileDialog::default().pick_folder().await {
             let path = path.path().to_path_buf().join(name.clone());
 
@@ -228,7 +226,7 @@ impl super::filesystem_trait::Filesystem for Filesystem {
 
             self.save_data(format!("{name}.lumproj"), "").await
         } else {
-            Err("Cancelled opening a folder".to_owned())
+            Err(eyre!("Cancelled opening a folder"))
         }
     }
 }
@@ -240,14 +238,14 @@ impl Filesystem {
         path: PathBuf,
         info: &'static UpdateInfo,
         rgss_ver: RGSSVer,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         use super::filesystem_trait::Filesystem;
 
         *self.project_path.borrow_mut() = Some(path);
         self.create_directory("").await?;
 
         if !self.dir_children(".").await?.is_empty() {
-            return Err("Directory not empty".to_string());
+            return Err(eyre!("Directory not empty"));
         }
 
         self.create_directory("Data").await?;

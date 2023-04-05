@@ -18,6 +18,7 @@
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use eyre::Result;
 
 use crate::{data::config::RGSSVer, UpdateInfo};
 
@@ -35,40 +36,36 @@ pub trait Filesystem {
     fn project_path(&self) -> Option<PathBuf>;
 
     /// Get the directory children of a path.
-    async fn dir_children(&self, path: impl AsRef<Path>) -> Result<Vec<String>, String>;
+    async fn dir_children(&self, path: impl AsRef<Path>) -> Result<Vec<String>>;
 
     /// Read a data file and deserialize it with RON (rusty object notation)
     /// In the future this will take an optional parameter (type) to set the loading method.
     /// (Options would be Marshal, RON, Lumina)
-    async fn read_data<T: serde::de::DeserializeOwned>(
-        &self,
-        path: impl AsRef<Path>,
-    ) -> Result<T, String>;
+    async fn read_data<T: serde::de::DeserializeOwned>(&self, path: impl AsRef<Path>) -> Result<T>;
 
     /// Read bytes from a file.
-    async fn read_bytes(&self, provided_path: impl AsRef<Path>) -> Result<Vec<u8>, String>;
+    async fn read_bytes(&self, provided_path: impl AsRef<Path>) -> Result<Vec<u8>>;
 
     /// Save some file's data by serializing it with RON.
-    async fn save_data(&self, path: impl AsRef<Path>, data: impl AsRef<[u8]>)
-        -> Result<(), String>;
+    async fn save_data(&self, path: impl AsRef<Path>, data: impl AsRef<[u8]>) -> Result<()>;
 
     /// Check if file path exists
     async fn file_exists(&self, path: impl AsRef<Path>) -> bool;
 
     /// Save all cached files. An alias for [`DataCache::save`];
-    async fn save_cached(&self, info: &'static UpdateInfo) -> Result<(), String>;
+    async fn save_cached(&self, info: &'static UpdateInfo) -> Result<()>;
     /// Try to open a project.
     async fn try_open_project(
         &self,
         info: &'static UpdateInfo,
         #[cfg(not(target_arch = "wasm32"))] path: impl ToString,
-    ) -> Result<(), String>;
+    ) -> Result<()>;
 
     /// Create a directory at the specified path.
-    async fn create_directory(&self, path: impl AsRef<Path>) -> Result<(), String>;
+    async fn create_directory(&self, path: impl AsRef<Path>) -> Result<()>;
 
     /// Spawn a picker window and retriev
-    async fn spawn_project_file_picker(&self, info: &'static UpdateInfo) -> Result<(), String>;
+    async fn spawn_project_file_picker(&self, info: &'static UpdateInfo) -> Result<()>;
 
     /// Try to create a project.
     async fn try_create_project(
@@ -76,5 +73,5 @@ pub trait Filesystem {
         name: String,
         info: &'static UpdateInfo,
         rgss_ver: RGSSVer,
-    ) -> Result<(), String>;
+    ) -> Result<()>;
 }

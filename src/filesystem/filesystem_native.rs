@@ -125,7 +125,6 @@ impl super::filesystem_trait::Filesystem for Filesystem {
 
     /// Save all cached files. An alias for [`DataCache::save`];
     async fn save_cached(&self, info: &'static UpdateInfo) -> Result<()> {
-        // ! TODO
         info.data_cache.save(self).await
     }
 
@@ -139,7 +138,6 @@ impl super::filesystem_trait::Filesystem for Filesystem {
 
         *self.loading_project.borrow_mut() = true;
 
-        // ! TODO
         info.data_cache.load(self).await.map_err(|e| {
             *self.project_path.borrow_mut() = None;
             *self.loading_project.borrow_mut() = false;

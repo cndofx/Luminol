@@ -17,6 +17,7 @@
 
 use crate::data::nil_padded::NilPadded;
 use crate::data::rmxp_structs::rpg;
+use eyre::{eyre, Result};
 use std::{
     cell::{RefCell, RefMut},
     collections::HashMap,
@@ -62,13 +63,13 @@ macro_rules! save_data {
                     .[< $name:lower >]
                     .borrow()
                     .as_ref()
-                    .map(|t| alox_48::to_bytes(t).map_err(|e| format!(concat!("Saving ", stringify!($name), ": {}"), e)));
+                    .map(|t| alox_48::to_bytes(t).map_err(|e| eyre!(concat!("Saving ", stringify!($name), ": {}"), e)));
 
                 if let Some(_bytes) = _bytes {
                     $filesystem
                         .save_data(concat!("Data/", stringify!($name), ".rxdata"), _bytes?)
                         .await
-                        .map_err(|_| concat!("Failed to write", stringify!($name), "data"))?;
+                        .map_err(|e| eyre!(concat!("Failed to write ", stringify!($name), " data: {}"), e))?;
                 }
             }
         )*
@@ -83,7 +84,7 @@ macro_rules! load_data {
                     $filesystem
                         .read_data(concat!("Data/", stringify!($name), ".rxdata"))
                         .await
-                        .map_err(|s| format!(concat!("Failed to load ", stringify!($name) ,": {}"), s))?,
+                        .map_err(|e| eyre!(concat!("Failed to load ", stringify!($name), " data: {}"), e))?,
                 );
             }
         )*
@@ -92,7 +93,7 @@ macro_rules! load_data {
 
 impl Cache {
     /// Load all data required when opening a project.
-    pub async fn load(&self, filesystem: &impl Filesystem) -> Result<(), String> {
+    pub async fn load(&self, filesystem: &impl Filesystem) -> Result<()> {
         // FIXME: keep errors?
         let config = filesystem
             .read_bytes(".luminol")
@@ -126,9 +127,8 @@ impl Cache {
             self.config.borrow_mut().as_mut().unwrap().scripts_path = "xScripts".to_string();
         }
 
-        *self.scripts.borrow_mut() = Some(
-            scripts.map_err(|s| format!("Failed to read Scripts (tried xScripts first): {s}"))?,
-        );
+        *self.scripts.borrow_mut() =
+            Some(scripts.map_err(|s| eyre!("Failed to read Scripts (tried xScripts first): {s}"))?);
 
         self.maps.borrow_mut().clear();
         Ok(())
@@ -139,13 +139,13 @@ impl Cache {
         &self,
         filesystem: &'static impl Filesystem,
         id: i32,
-    ) -> Result<RefMut<'_, rpg::Map>, String> {
+    ) -> Result<RefMut<'_, rpg::Map>> {
         let has_map = self.maps.borrow().contains_key(&id);
         if !has_map {
             let map = filesystem
                 .read_data(format!("Data/Map{id:0>3}.rxdata",))
                 .await
-                .map_err(|e| format!("Failed to load map: {e}"))?;
+                .map_err(|e| eyre!("Failed to load map: {e}"))?;
             self.maps.borrow_mut().insert(id, map);
         }
         Ok(RefMut::map(self.maps.borrow_mut(), |m| {
@@ -207,16 +207,17 @@ impl Cache {
     }
 
     /// Save the local config.
-    pub async fn save_config(&self, filesystem: &impl Filesystem) -> Result<(), String> {
-        let config_bytes = self.config.borrow().as_ref().map(|c| {
-            ron::to_string(c).map_err(|e| format!("Failed to serialize config data: {e}"))
-        });
+    pub async fn save_config(&self, filesystem: &impl Filesystem) -> Result<()> {
+        let config_bytes =
+            self.config.borrow().as_ref().map(|c| {
+                ron::to_string(c).map_err(|e| eyre!("Failed to serialize config data: {e}"))
+            });
 
         if let Some(config_bytes) = config_bytes {
             filesystem
                 .save_data(".luminol", &config_bytes?)
                 .await
-                .map_err(|_| "Failed to write Config data")?;
+                .map_err(|e| eyre!("Failed to write config data: {e}"))?;
         }
 
         Ok(())
@@ -224,7 +225,7 @@ impl Cache {
 
     /// Save all cached data to disk.
     /// Will flush the cache too.
-    pub async fn save(&self, filesystem: &impl Filesystem) -> Result<(), String> {
+    pub async fn save(&self, filesystem: &impl Filesystem) -> Result<()> {
         self.system().as_mut().unwrap().magic_number = rand::random();
 
         // Write map data and clear map cache.
@@ -233,7 +234,12 @@ impl Cache {
         let maps_bytes: HashMap<_, _> = {
             let maps = self.maps.borrow();
             maps.iter()
-                .map(|(id, map)| (*id, alox_48::to_bytes(map).map_err(|e| e.to_string())))
+                .map(|(id, map)| {
+                    (
+                        *id,
+                        alox_48::to_bytes(map).map_err(Into::<eyre::Report>::into),
+                    )
+                })
                 .collect()
         };
 
@@ -241,7 +247,7 @@ impl Cache {
             filesystem
                 .save_data(format!("Data/Map{id:0>3}.rxdata",), map?)
                 .await
-                .map_err(|e| format!("Failed to write Map data {e}"))?;
+                .map_err(|e| eyre!("Failed to write Map data: {e}"));
         }
 
         save_data! {

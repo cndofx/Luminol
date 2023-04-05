@@ -17,6 +17,7 @@
 
 use std::sync::Arc;
 
+use eyre::Result;
 use poll_promise::Promise;
 use strum::IntoEnumIterator;
 
@@ -26,8 +27,8 @@ use crate::{Pencil, UpdateInfo};
 /// The top bar for managing the project.
 #[derive(Default)]
 pub struct TopBar {
-    open_project_promise: Option<Promise<Result<(), String>>>,
-    save_project_promise: Option<Promise<Result<(), String>>>,
+    open_project_promise: Option<Promise<Result<()>>>,
+    save_project_promise: Option<Promise<Result<()>>>,
     egui_settings_open: bool,
     #[cfg(not(target_arch = "wasm32"))]
     fullscreen: bool,
@@ -236,7 +237,7 @@ impl TopBar {
             if let Some(r) = self.open_project_promise.as_ref().unwrap().ready() {
                 match r {
                     Ok(_) => info.toasts.info("Opened project successfully!"),
-                    Err(e) => info.toasts.error(e),
+                    Err(e) => info.toasts.error(e.to_string()),
                 }
                 self.open_project_promise = None;
             }
@@ -246,7 +247,7 @@ impl TopBar {
             if let Some(r) = self.save_project_promise.as_ref().unwrap().ready() {
                 match r {
                     Ok(_) => info.toasts.info("Saved project sucessfully!"),
-                    Err(e) => info.toasts.error(e),
+                    Err(e) => info.toasts.error(e.to_string()),
                 }
                 self.save_project_promise = None;
             }

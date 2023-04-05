@@ -30,6 +30,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use egui::{Pos2, Response, Vec2};
+use eyre::{eyre, Result};
 
 use crate::data::commands::process_move_route;
 use crate::data::rmxp_structs::rpg;
@@ -51,7 +52,7 @@ pub struct Tilemap {
     pub move_preview: bool,
     ani_idx: i32,
     ani_instant: Instant,
-    load_promise: poll_promise::Promise<Result<Textures, String>>,
+    load_promise: poll_promise::Promise<Result<Textures>>,
 }
 
 struct Textures {
@@ -629,15 +630,14 @@ impl TilemapDef for Tilemap {
         self.load_promise
             .ready()
             .unwrap()
-            .as_ref()
             .map(|_| ())
-            .map_err(std::clone::Clone::clone)
+            .map_err(|e| e.to_string())
     }
 }
 
 impl Tilemap {
     #[allow(unused_variables, unused_assignments)]
-    async fn load_data(info: &'static UpdateInfo, id: i32) -> Result<Textures, String> {
+    async fn load_data(info: &'static UpdateInfo, id: i32) -> Result<Textures> {
         // Load the map.
         let tileset_name;
         let autotile_names;
@@ -662,7 +662,7 @@ impl Tilemap {
             // We subtract 1 because RMXP is stupid and pads arrays with nil to start at 1.
             let tileset = &tilesets
                 .as_ref()
-                .ok_or_else(|| "Tilesets not loaded".to_string())?[map.tileset_id as usize - 1];
+                .ok_or_else(|| eyre!("Tilesets not loaded"))?[map.tileset_id as usize - 1];
 
             tileset_name = tileset.tileset_name.clone();
             autotile_names = tileset.autotile_names.clone();

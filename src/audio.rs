@@ -18,6 +18,7 @@
 use rodio::Decoder;
 use rodio::{OutputStream, OutputStreamHandle, Sink};
 
+use eyre::Result;
 use std::io::Cursor;
 use std::{cell::RefCell, collections::HashMap};
 use strum::Display;
@@ -68,12 +69,12 @@ impl Audio {
         volume: u8,
         pitch: u8,
         source: Source,
-    ) -> Result<(), String> {
+    ) -> Result<()> {
         // Create a sink
         let sink = {
             let inner = self.inner.borrow();
 
-            Sink::try_new(&inner.outputstream.1).map_err(|e| e.to_string())?
+            Sink::try_new(&inner.outputstream.1)?
         };
         // Append the sound
         let cursor = Cursor::new(filesystem.read_bytes(&path).await?);
@@ -81,11 +82,11 @@ impl Audio {
         match source {
             Source::SE | Source::ME => {
                 // Non looping
-                sink.append(Decoder::new(cursor).map_err(|e| e.to_string())?)
+                sink.append(Decoder::new(cursor)?)
             }
             _ => {
                 // Looping
-                sink.append(Decoder::new_looped(cursor).map_err(|e| e.to_string())?)
+                sink.append(Decoder::new_looped(cursor)?)
             }
         }
 
